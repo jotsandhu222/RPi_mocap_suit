@@ -35,7 +35,8 @@ echo "[2/4] Setting up external storage auto-mount..."
 
 # Try to find the largest external USB partition to use as cloud storage
 # Look for any disk partiton larger than 10GB that is not mounted as root (/) or boot
-SSD_PARTITION=$(lsblk -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v ' /$' | grep -v '/boot' | awk '$3 ~ /G|T/ && $3+0 > 10 {print "/dev/"$1}' | head -n 1)
+# Fix: The awk script was doing `$3+0 > 10`, but size might be "59.6G", meaning it evaluated correctly in most cases but could fail. We use sorting by byte size.
+SSD_PARTITION=$(lsblk -b -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v ' /$' | grep -v '/boot' | awk '$3 > 10000000000 {print "/dev/"$1}' | head -n 1)
 
 if [ -n "$SSD_PARTITION" ]; then
     echo "Found available storage partition: $SSD_PARTITION"
@@ -46,7 +47,7 @@ if [ -n "$SSD_PARTITION" ]; then
     if [ -n "$CURRENT_MOUNT" ] && [ "$CURRENT_MOUNT" != "/mnt/cloud_data" ]; then
         echo "Partition is currently auto-mounted by OS at: $CURRENT_MOUNT"
         echo "Unmounting to remount at /mnt/cloud_data..."
-        umount "$SSD_PARTITION"
+        umount "$SSD_PARTITION" || true
     fi
 
     mkdir -p /mnt/cloud_data
@@ -100,6 +101,9 @@ cd ..
 
 # Export environment variable used in docker-compose.yml to mount the exact SSD path
 export DATA_MOUNT_POINT="/mnt/cloud_data"
+
+# Stop existing containers to ensure the new volume mount takes effect
+docker compose down || true
 docker compose up -d
 
 echo "==========================================="
