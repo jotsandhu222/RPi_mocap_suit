@@ -31,6 +31,10 @@ else
     echo "Docker Compose is already installed."
 fi
 
+# Make sure exFAT and NTFS are supported to prevent Input/output errors
+apt-get update
+apt-get install -y exfat-fuse ntfs-3g
+
 echo "[2/4] Setting up external storage auto-mount..."
 
 # Hardcoded to explicitly use /dev/sda2 based on user provided hardware configuration
@@ -45,15 +49,19 @@ if lsblk "$SSD_PARTITION" > /dev/null 2>&1; then
     if [ -n "$CURRENT_MOUNT" ] && [ "$CURRENT_MOUNT" != "/mnt/cloud_data" ]; then
         echo "Partition is currently auto-mounted by OS at: $CURRENT_MOUNT"
         echo "Unmounting to remount at /mnt/cloud_data..."
-        umount "$SSD_PARTITION" || true
+        umount -f "$SSD_PARTITION" || true
     fi
+
+    # Try to clean up broken mounts
+    umount -l /mnt/cloud_data 2>/dev/null || true
 
     mkdir -p /mnt/cloud_data
     UUID=$(blkid -s UUID -o value "$SSD_PARTITION")
+    TYPE=$(blkid -s TYPE -o value "$SSD_PARTITION")
 
     if [ -n "$UUID" ]; then
         if ! grep -qs '/mnt/cloud_data' /proc/mounts; then
-            echo "Mounting $SSD_PARTITION (UUID: $UUID) to /mnt/cloud_data"
+            echo "Mounting $SSD_PARTITION (UUID: $UUID, TYPE: $TYPE) to /mnt/cloud_data"
             mount "$SSD_PARTITION" /mnt/cloud_data
         else
             echo "Storage already mounted at /mnt/cloud_data."
@@ -62,7 +70,12 @@ if lsblk "$SSD_PARTITION" > /dev/null 2>&1; then
         # Add to fstab if not already present
         if ! grep -q "$UUID" /etc/fstab; then
             echo "Adding $SSD_PARTITION to /etc/fstab for persistent auto-mount..."
-            echo "UUID=$UUID /mnt/cloud_data auto defaults,nofail 0 2" >> /etc/fstab
+            # For exFAT/NTFS on Linux, we need uid/gid options so Docker can read/write it
+            if [ "$TYPE" == "exfat" ] || [ "$TYPE" == "ntfs" ]; then
+                echo "UUID=$UUID /mnt/cloud_data $TYPE defaults,auto,umask=000,users,rw 0 0" >> /etc/fstab
+            else
+                echo "UUID=$UUID /mnt/cloud_data auto defaults,nofail 0 2" >> /etc/fstab
+            fi
         fi
     else
         echo "Error: Could not determine UUID for $SSD_PARTITION. Please format it first."
@@ -77,7 +90,7 @@ fi
 # Ensure storage directory exists and has correct permissions
 mkdir -p /mnt/cloud_data/storage
 if [ -n "$SUDO_USER" ]; then
-    chown -R $SUDO_USER:$SUDO_USER /mnt/cloud_data
+    chown -R $SUDO_USER:$SUDO_USER /mnt/cloud_data || echo "Warning: chown failed, likely an exFAT/NTFS permission boundary. Continuing."
 fi
 
 # Remove old symlink approach if it exists
