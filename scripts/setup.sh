@@ -31,17 +31,18 @@ else
     echo "Docker Compose is already installed."
 fi
 
-echo "[2/4] Setting up external SSD auto-mount..."
+echo "[2/4] Setting up external storage auto-mount..."
 mkdir -p /mnt/cloud_data
 if grep -qs '/mnt/cloud_data' /proc/mounts; then
-    echo "SSD already mounted."
+    echo "Storage already mounted."
 else
     # Find the largest external USB partition to use as cloud storage
-    # We look for partitions on sd* devices that are larger than 10GB (10000000 blocks)
-    SSD_PARTITION=$(lsblk -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v '/' | grep 'sd' | awk '$3 ~ /G|T/ && $3+0 > 10 {print "/dev/"$1}' | head -n 1)
+    # Look for any disk partiton larger than 10GB that is not mounted as root (/)
+    # It removes the 'sd' restriction so pen drives or other block devices can be caught too
+    SSD_PARTITION=$(lsblk -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v '/' | awk '$3 ~ /G|T/ && $3+0 > 10 {print "/dev/"$1}' | head -n 1)
 
     if [ -n "$SSD_PARTITION" ]; then
-        echo "Found available SSD partition: $SSD_PARTITION"
+        echo "Found available storage partition: $SSD_PARTITION"
         UUID=$(blkid -s UUID -o value "$SSD_PARTITION")
 
         if [ -n "$UUID" ]; then
@@ -58,7 +59,7 @@ else
             echo "Using local /mnt/cloud_data directory as fallback."
         fi
     else
-        echo "No suitable external SSD partition found. Using local /mnt/cloud_data directory as fallback."
+        echo "No suitable external storage partition found. Using local /mnt/cloud_data directory as fallback."
     fi
 fi
 
