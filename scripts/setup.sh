@@ -4,9 +4,14 @@ echo "==========================================="
 echo "   Personal Cloud - Raspberry Pi Setup     "
 echo "==========================================="
 
+# Ensure we are in the root directory of the project where docker-compose.yml lives
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
-  echo "Please run as root (sudo ./setup.sh)"
+  echo "Please run as root (sudo ./scripts/setup.sh)"
   exit 1
 fi
 
@@ -60,9 +65,15 @@ if lsblk "$SSD_PARTITION" > /dev/null 2>&1; then
     TYPE=$(blkid -s TYPE -o value "$SSD_PARTITION")
 
     if [ -n "$UUID" ]; then
+        # For exFAT/NTFS on Linux, we need uid/gid options so Docker can read/write it
+        # Apply standard exfat mount options directly via CLI mount first to prevent I/O errors
         if ! grep -qs '/mnt/cloud_data' /proc/mounts; then
             echo "Mounting $SSD_PARTITION (UUID: $UUID, TYPE: $TYPE) to /mnt/cloud_data"
-            mount "$SSD_PARTITION" /mnt/cloud_data
+            if [ "$TYPE" == "exfat" ] || [ "$TYPE" == "ntfs" ]; then
+                mount -t "$TYPE" -o defaults,auto,umask=000,users,rw "$SSD_PARTITION" /mnt/cloud_data
+            else
+                mount "$SSD_PARTITION" /mnt/cloud_data
+            fi
         else
             echo "Storage already mounted at /mnt/cloud_data."
         fi
@@ -70,7 +81,6 @@ if lsblk "$SSD_PARTITION" > /dev/null 2>&1; then
         # Add to fstab if not already present
         if ! grep -q "$UUID" /etc/fstab; then
             echo "Adding $SSD_PARTITION to /etc/fstab for persistent auto-mount..."
-            # For exFAT/NTFS on Linux, we need uid/gid options so Docker can read/write it
             if [ "$TYPE" == "exfat" ] || [ "$TYPE" == "ntfs" ]; then
                 echo "UUID=$UUID /mnt/cloud_data $TYPE defaults,auto,umask=000,users,rw 0 0" >> /etc/fstab
             else
@@ -94,10 +104,10 @@ if [ -n "$SUDO_USER" ]; then
 fi
 
 # Remove old symlink approach if it exists
-if [ -L "../data/storage" ]; then
-    rm "../data/storage"
+if [ -L "./data/storage" ]; then
+    rm "./data/storage"
 fi
-mkdir -p ../data
+mkdir -p ./data
 
 echo "[3/4] Attempting to configure Tailscale for remote access..."
 if ! command -v tailscale &> /dev/null; then
@@ -108,7 +118,6 @@ else
 fi
 
 echo "[4/4] Starting Personal Cloud services..."
-cd ..
 
 # Export environment variable used in docker-compose.yml to mount the exact SSD path
 export DATA_MOUNT_POINT="/mnt/cloud_data"
