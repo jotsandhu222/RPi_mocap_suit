@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    network_mode: "host"
+    volumes:
+      - ${DATA_MOUNT_POINT:-./data}:/data
+    environment:
+      - DATA_DIR=/data
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    network_mode: "host"
+    depends_on:
+      - backend
