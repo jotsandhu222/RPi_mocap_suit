@@ -35,8 +35,8 @@ echo "[2/4] Setting up external storage auto-mount..."
 
 # Try to find the largest external USB partition to use as cloud storage
 # Look for any disk partiton larger than 10GB that is not mounted as root (/) or boot
-# Fix: The awk script was doing `$3+0 > 10`, but size might be "59.6G", meaning it evaluated correctly in most cases but could fail. We use sorting by byte size.
-SSD_PARTITION=$(lsblk -b -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v ' /$' | grep -v '/boot' | awk '$3 > 10000000000 {print "/dev/"$1}' | head -n 1)
+# Sorts by descending size and picks the largest external partition
+SSD_PARTITION=$(lsblk -b -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v ' /$' | grep -v '/boot' | awk '$3 > 10000000000 {print "/dev/"$1, $3}' | sort -k2 -nr | awk '{print $1}' | head -n 1)
 
 if [ -n "$SSD_PARTITION" ]; then
     echo "Found available storage partition: $SSD_PARTITION"
