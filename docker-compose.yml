@@ -1,9 +1,9 @@
-
 services:
   backend:
     build: ./backend
     restart: unless-stopped
-    network_mode: "host"
+    ports:
+      - "8000:8000"
     volumes:
       - ${DATA_MOUNT_POINT:-./data}:/data
     environment:
@@ -12,6 +12,7 @@ services:
   frontend:
     build: ./frontend
     restart: unless-stopped
-    network_mode: "host"
+    ports:
+      - "80:80"
     depends_on:
       - backend
