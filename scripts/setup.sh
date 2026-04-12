@@ -31,35 +31,49 @@ else
     echo "Docker Compose is already installed."
 fi
 
-echo "[2/4] Setting up external SSD auto-mount..."
-mkdir -p /mnt/cloud_data
-if grep -qs '/mnt/cloud_data' /proc/mounts; then
-    echo "SSD already mounted."
-else
-    # Find the largest external USB partition to use as cloud storage
-    # We look for partitions on sd* devices that are larger than 10GB (10000000 blocks)
-    SSD_PARTITION=$(lsblk -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v '/' | grep 'sd' | awk '$3 ~ /G|T/ && $3+0 > 10 {print "/dev/"$1}' | head -n 1)
+echo "[2/4] Setting up external storage auto-mount..."
 
-    if [ -n "$SSD_PARTITION" ]; then
-        echo "Found available SSD partition: $SSD_PARTITION"
-        UUID=$(blkid -s UUID -o value "$SSD_PARTITION")
+# Try to find the largest external USB partition to use as cloud storage
+# Look for any disk partiton larger than 10GB that is not mounted as root (/) or boot
+# Sorts by descending size and picks the largest external partition
+SSD_PARTITION=$(lsblk -b -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v ' /$' | grep -v '/boot' | awk '$3 > 10000000000 {print "/dev/"$1, $3}' | sort -k2 -nr | awk '{print $1}' | head -n 1)
 
-        if [ -n "$UUID" ]; then
+if [ -n "$SSD_PARTITION" ]; then
+    echo "Found available storage partition: $SSD_PARTITION"
+
+    # Check if it's already mounted somewhere else by the OS (e.g. /media/pi/...)
+    CURRENT_MOUNT=$(lsblk -rn -o MOUNTPOINT "$SSD_PARTITION")
+
+    if [ -n "$CURRENT_MOUNT" ] && [ "$CURRENT_MOUNT" != "/mnt/cloud_data" ]; then
+        echo "Partition is currently auto-mounted by OS at: $CURRENT_MOUNT"
+        echo "Unmounting to remount at /mnt/cloud_data..."
+        umount "$SSD_PARTITION" || true
+    fi
+
+    mkdir -p /mnt/cloud_data
+    UUID=$(blkid -s UUID -o value "$SSD_PARTITION")
+
+    if [ -n "$UUID" ]; then
+        if ! grep -qs '/mnt/cloud_data' /proc/mounts; then
             echo "Mounting $SSD_PARTITION (UUID: $UUID) to /mnt/cloud_data"
             mount "$SSD_PARTITION" /mnt/cloud_data
-
-            # Add to fstab if not already present
-            if ! grep -q "$UUID" /etc/fstab; then
-                echo "Adding $SSD_PARTITION to /etc/fstab for persistent auto-mount..."
-                echo "UUID=$UUID /mnt/cloud_data auto defaults,nofail 0 2" >> /etc/fstab
-            fi
         else
-            echo "Error: Could not determine UUID for $SSD_PARTITION. Please format it first."
-            echo "Using local /mnt/cloud_data directory as fallback."
+            echo "Storage already mounted at /mnt/cloud_data."
+        fi
+
+        # Add to fstab if not already present
+        if ! grep -q "$UUID" /etc/fstab; then
+            echo "Adding $SSD_PARTITION to /etc/fstab for persistent auto-mount..."
+            echo "UUID=$UUID /mnt/cloud_data auto defaults,nofail 0 2" >> /etc/fstab
         fi
     else
-        echo "No suitable external SSD partition found. Using local /mnt/cloud_data directory as fallback."
+        echo "Error: Could not determine UUID for $SSD_PARTITION. Please format it first."
+        echo "Using local /mnt/cloud_data directory as fallback."
     fi
+else
+    echo "No suitable external storage partition found."
+    mkdir -p /mnt/cloud_data
+    echo "Using local /mnt/cloud_data directory as fallback."
 fi
 
 # Ensure storage directory exists and has correct permissions
@@ -87,6 +101,9 @@ cd ..
 
 # Export environment variable used in docker-compose.yml to mount the exact SSD path
 export DATA_MOUNT_POINT="/mnt/cloud_data"
+
+# Stop existing containers to ensure the new volume mount takes effect
+docker compose down || true
 docker compose up -d
 
 echo "==========================================="
