@@ -33,13 +33,11 @@ fi
 
 echo "[2/4] Setting up external storage auto-mount..."
 
-# Try to find the largest external USB partition to use as cloud storage
-# Look for any disk partiton larger than 10GB that is not mounted as root (/) or boot
-# Sorts by descending size and picks the largest external partition
-SSD_PARTITION=$(lsblk -b -rn -o NAME,TYPE,SIZE,MOUNTPOINT | grep 'part' | grep -v ' /$' | grep -v '/boot' | awk '$3 > 10000000000 {print "/dev/"$1, $3}' | sort -k2 -nr | awk '{print $1}' | head -n 1)
+# Hardcoded to explicitly use /dev/sda2 based on user provided hardware configuration
+SSD_PARTITION="/dev/sda2"
 
-if [ -n "$SSD_PARTITION" ]; then
-    echo "Found available storage partition: $SSD_PARTITION"
+if lsblk "$SSD_PARTITION" > /dev/null 2>&1; then
+    echo "Found forced storage partition: $SSD_PARTITION"
 
     # Check if it's already mounted somewhere else by the OS (e.g. /media/pi/...)
     CURRENT_MOUNT=$(lsblk -rn -o MOUNTPOINT "$SSD_PARTITION")
@@ -71,7 +69,7 @@ if [ -n "$SSD_PARTITION" ]; then
         echo "Using local /mnt/cloud_data directory as fallback."
     fi
 else
-    echo "No suitable external storage partition found."
+    echo "Error: Partition $SSD_PARTITION not found. Ensure the drive is plugged in."
     mkdir -p /mnt/cloud_data
     echo "Using local /mnt/cloud_data directory as fallback."
 fi
