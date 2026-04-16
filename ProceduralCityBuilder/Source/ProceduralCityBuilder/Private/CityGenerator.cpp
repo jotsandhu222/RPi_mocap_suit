@@ -1,4 +1,5 @@
 #include "CityGenerator.h"
+#include "Components/SceneComponent.h"
 #include "Math/RandomStream.h"
 
 // Sets default values
